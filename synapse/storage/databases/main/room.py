@@ -73,6 +73,44 @@ class RoomWorkerStore(SQLBaseStore):
 
         self.config = hs.config
 
+    async def store_room(
+        self,
+        room_id: str,
+        room_creator_user_id: str,
+        is_public: bool,
+        room_version: RoomVersion,
+    ):
+        """Stores a room.
+
+        Args:
+            room_id: The desired room ID, can be None.
+            room_creator_user_id: The user ID of the room creator.
+            is_public: True to indicate that this room should appear in
+                public room lists.
+            room_version: The version of the room
+        Raises:
+            StoreError if the room could not be stored.
+        """
+        try:
+
+            def store_room_txn(txn):
+                self.db_pool.simple_insert_txn(
+                    txn,
+                    "rooms",
+                    {
+                        "room_id": room_id,
+                        "creator": room_creator_user_id,
+                        "is_public": is_public,
+                        "room_version": room_version.identifier,
+                        "has_auth_chain_index": True,
+                    },
+                )
+
+            await self.db_pool.runInteraction("store_room_txn", store_room_txn)
+        except Exception as e:
+            logger.error("store_room with room_id=%s failed: %s", room_id, e)
+            raise StoreError(500, "Problem creating room.")
+
     async def get_room(self, room_id: str) -> dict:
         """Retrieve a room.
 
@@ -1390,44 +1428,6 @@ class RoomStore(RoomBackgroundUpdateStore, RoomWorkerStore, SearchStore):
             # emulated upsert.
             lock=False,
         )
-
-    async def store_room(
-        self,
-        room_id: str,
-        room_creator_user_id: str,
-        is_public: bool,
-        room_version: RoomVersion,
-    ):
-        """Stores a room.
-
-        Args:
-            room_id: The desired room ID, can be None.
-            room_creator_user_id: The user ID of the room creator.
-            is_public: True to indicate that this room should appear in
-                public room lists.
-            room_version: The version of the room
-        Raises:
-            StoreError if the room could not be stored.
-        """
-        try:
-
-            def store_room_txn(txn):
-                self.db_pool.simple_insert_txn(
-                    txn,
-                    "rooms",
-                    {
-                        "room_id": room_id,
-                        "creator": room_creator_user_id,
-                        "is_public": is_public,
-                        "room_version": room_version.identifier,
-                        "has_auth_chain_index": True,
-                    },
-                )
-
-            await self.db_pool.runInteraction("store_room_txn", store_room_txn)
-        except Exception as e:
-            logger.error("store_room with room_id=%s failed: %s", room_id, e)
-            raise StoreError(500, "Problem creating room.")
 
     async def maybe_store_room_on_outlier_membership(
         self, room_id: str, room_version: RoomVersion
